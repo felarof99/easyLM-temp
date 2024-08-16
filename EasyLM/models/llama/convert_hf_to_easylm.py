@@ -22,11 +22,11 @@ from EasyLM.jax_utils import get_float_dtype_by_name
 
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
-    hf_model="",
-    output_file="",
-    streaming=True,
-    float_dtype="bf16",
-    llama=LLaMAConfigurator.get_default_config(),
+    # hf_model="",
+    # output_file="",
+    # streaming=True,
+    # float_dtype="bf16",
+    # llama=LLaMAConfigurator.get_default_config(),
 )
 
 
@@ -40,7 +40,8 @@ def inverse_permute(w, n_heads, input_dim, output_dim):
 def main(argv):
     start = time.time()
     llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
-    hf_model = AutoModelForCausalLM.from_pretrained(FLAGS.hf_model)
+    huggingface_token = input("INPUT: Please provide your HUGGINGFACE_TOKEN: ")
+    hf_model = AutoModelForCausalLM.from_pretrained(, token=huggingface_token)
     ckpt = hf_model.state_dict()
 
     print(f"Start convert weight to easylm format...")

@@ -38,9 +38,9 @@ from EasyLM.jax_utils import float_tensor_to_dtype
 
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
-    load_checkpoint='',
-    output_dir='',
-    llama=LLaMAConfigurator.get_default_config(),
+    # load_checkpoint='',
+    # output_dir='',
+    # llama=LLaMAConfigurator.get_default_config(),
 )
 
 def match_keywords(string, positives, negatives):
