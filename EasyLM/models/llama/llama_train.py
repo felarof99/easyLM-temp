@@ -27,28 +27,28 @@ from EasyLM.models.llama.llama_model import (
 
 
 FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
-    seed=42,
-    mesh_dim='1,-1,1',
-    dtype='fp32',
-    param_dtype='fp32',
-    total_steps=10000,
-    load_llama_config='',
-    update_llama_config='',
-    load_checkpoint='',
-    load_dataset_state='',
-    log_freq=50,
-    save_model_freq=0,
-    save_milestone_freq=0,
-    eval_steps=0,
-    tokenizer='openlm-research/open_llama_3b_v2',
-    train_dataset=DatasetFactory.get_default_config(),
-    eval_dataset=DatasetFactory.get_default_config(),
-    optimizer=OptimizerFactory.get_default_config(),
-    checkpointer=StreamingCheckpointer.get_default_config(),
-    llama=LLaMAConfigurator.get_default_config(),
-    logger=mlxu.WandBLogger.get_default_config(),
-    log_all_worker=False,
-    jax_distributed=JaxDistributedConfig.get_default_config(),
+    # seed=42,
+    # mesh_dim='1,-1,1',
+    # dtype='fp32',
+    # param_dtype='fp32',
+    # total_steps=10000,
+    # load_llama_config='',
+    # update_llama_config='',
+    # load_checkpoint='',
+    # load_dataset_state='',
+    # log_freq=50,
+    # save_model_freq=0,
+    # save_milestone_freq=0,
+    # eval_steps=0,
+    # tokenizer='openlm-research/open_llama_3b_v2',
+    # train_dataset=DatasetFactory.get_default_config(),
+    # eval_dataset=DatasetFactory.get_default_config(),
+    # optimizer=OptimizerFactory.get_default_config(),
+    # checkpointer=StreamingCheckpointer.get_default_config(),
+    # llama=LLaMAConfigurator.get_default_config(),
+    # logger=mlxu.WandBLogger.get_default_config(),
+    # log_all_worker=False,
+    # jax_distributed=JaxDistributedConfig.get_default_config(),
 )
 
 
@@ -65,14 +65,14 @@ def main(argv):
 
     tokenizer = AutoTokenizer.from_pretrained(FLAGS.tokenizer)
     dataset = DatasetFactory.load_dataset(FLAGS.train_dataset, tokenizer)
-    if FLAGS.load_dataset_state != '':
-        dataset.load_state_dict(mlxu.load_pickle(FLAGS.load_dataset_state))
+    # if FLAGS.load_dataset_state != '':
+    #     dataset.load_state_dict(mlxu.load_pickle(FLAGS.load_dataset_state))
 
-    if FLAGS.eval_steps > 0:
-        eval_dataset = DatasetFactory.load_dataset(
-            FLAGS.eval_dataset, dataset.tokenizer
-        )
-        eval_iterator = iter(eval_dataset)
+    # if FLAGS.eval_steps > 0:
+    #     eval_dataset = DatasetFactory.load_dataset(
+    #         FLAGS.eval_dataset, dataset.tokenizer
+    #     )
+    #     eval_iterator = iter(eval_dataset)
 
     seq_length = dataset.seq_length
     llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
@@ -121,21 +121,21 @@ def main(argv):
         )
         return train_state, rng_generator(), metrics
 
-    def eval_step(train_state, rng, batch):
-        rng_generator = JaxRNG(rng)
-        batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
-        logits = model.apply(
-            train_state.params, batch['input_tokens'], deterministic=True,
-            rngs=rng_generator(LLaMAConfigurator.rng_keys()),
-        ).logits
-        loss, accuracy = cross_entropy_loss_and_accuracy(
-            logits, batch['target_tokens'], batch['loss_masks']
-        )
-        metrics = dict(
-            eval_loss=loss,
-            eval_accuracy=accuracy,
-        )
-        return rng_generator(), metrics
+    # def eval_step(train_state, rng, batch):
+    #     rng_generator = JaxRNG(rng)
+    #     batch = with_sharding_constraint(batch, PS(('dp', 'fsdp')))
+    #     logits = model.apply(
+    #         train_state.params, batch['input_tokens'], deterministic=True,
+    #         rngs=rng_generator(LLaMAConfigurator.rng_keys()),
+    #     ).logits
+    #     loss, accuracy = cross_entropy_loss_and_accuracy(
+    #         logits, batch['target_tokens'], batch['loss_masks']
+    #     )
+    #     metrics = dict(
+    #         eval_loss=loss,
+    #         eval_accuracy=accuracy,
+    #     )
+    #     return rng_generator(), metrics
 
     train_state_shapes = jax.eval_shape(init_fn, next_rng())
     train_state_partition = match_partition_rules(
@@ -177,21 +177,21 @@ def main(argv):
         donate_argnums=(1,),
     )
 
-    def save_checkpoint(train_state, milestone=False):
-        step = int(jax.device_get(train_state.step))
-        metadata = dict(
-            step=step,
-            variant=variant,
-            flags=flags_config_dict,
-            llama_config=llama_config.to_dict(),
-        )
-        checkpointer.save_all(
-            train_state=train_state,
-            gather_fns=gather_fns,
-            metadata=metadata,
-            dataset=dataset.get_state_dict(),
-            milestone=milestone,
-        )
+    # def save_checkpoint(train_state, milestone=False):
+    #     step = int(jax.device_get(train_state.step))
+    #     metadata = dict(
+    #         step=step,
+    #         variant=variant,
+    #         flags=flags_config_dict,
+    #         llama_config=llama_config.to_dict(),
+    #     )
+    #     checkpointer.save_all(
+    #         train_state=train_state,
+    #         gather_fns=gather_fns,
+    #         metadata=metadata,
+    #         dataset=dataset.get_state_dict(),
+    #         milestone=milestone,
+    #     )
 
     mesh = LLaMAConfigurator.get_jax_mesh(FLAGS.mesh_dim)
     with mesh:
@@ -211,8 +211,8 @@ def main(argv):
 
         start_step = int(jax.device_get(train_state.step))
 
-        if FLAGS.save_model_freq > 0:
-            save_checkpoint(train_state)
+        # if FLAGS.save_model_freq > 0:
+        #     save_checkpoint(train_state)
 
         sharded_rng = next_rng()
 
@@ -223,31 +223,32 @@ def main(argv):
                 train_state, sharded_rng, batch
             )
 
-            if step % FLAGS.log_freq == 0:
-                if FLAGS.eval_steps > 0:
-                    eval_metric_list = []
-                    for _ in range(FLAGS.eval_steps):
-                        eval_batch, _ = next(eval_iterator)
-                        sharded_rng, eval_metrics = sharded_eval_step(
-                            train_state, sharded_rng, eval_batch
-                        )
-                        eval_metric_list.append(eval_metrics)
-                    metrics.update(average_metrics(eval_metric_list))
+            print(f"step {step}")
+            # if step % FLAGS.log_freq == 0:
+            #     if FLAGS.eval_steps > 0:
+            #         eval_metric_list = []
+            #         for _ in range(FLAGS.eval_steps):
+            #             eval_batch, _ = next(eval_iterator)
+            #             sharded_rng, eval_metrics = sharded_eval_step(
+            #                 train_state, sharded_rng, eval_batch
+            #             )
+            #             eval_metric_list.append(eval_metrics)
+            #         metrics.update(average_metrics(eval_metric_list))
 
-                log_metrics = {"step": step}
-                log_metrics.update(metrics)
-                log_metrics.update(dataset_metrics)
-                log_metrics = jax.device_get(log_metrics)
-                logger.log(log_metrics)
-                tqdm.write("\n" + pprint.pformat(log_metrics) + "\n")
+            #     log_metrics = {"step": step}
+            #     log_metrics.update(metrics)
+            #     log_metrics.update(dataset_metrics)
+            #     log_metrics = jax.device_get(log_metrics)
+            #     logger.log(log_metrics)
+            #     tqdm.write("\n" + pprint.pformat(log_metrics) + "\n")
 
-            if FLAGS.save_milestone_freq > 0 and (step + 1) % FLAGS.save_milestone_freq == 0:
-                save_checkpoint(train_state, milestone=True)
-            elif FLAGS.save_model_freq > 0 and (step + 1) % FLAGS.save_model_freq == 0:
-                save_checkpoint(train_state)
+            # if FLAGS.save_milestone_freq > 0 and (step + 1) % FLAGS.save_milestone_freq == 0:
+            #     save_checkpoint(train_state, milestone=True)
+            # elif FLAGS.save_model_freq > 0 and (step + 1) % FLAGS.save_model_freq == 0:
+            #     save_checkpoint(train_state)
 
-        if FLAGS.save_model_freq > 0:
-            save_checkpoint(train_state)
+        # if FLAGS.save_model_freq > 0:
+        #     save_checkpoint(train_state)
 
 
 if __name__ == "__main__":
