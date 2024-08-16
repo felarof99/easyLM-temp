@@ -56,11 +56,11 @@ def main(argv):
     JaxDistributedConfig.initialize(FLAGS.jax_distributed)
     variant = mlxu.get_user_flags(FLAGS, FLAGS_DEF)
     flags_config_dict = mlxu.user_flags_to_config_dict(FLAGS, FLAGS_DEF)
-    logger = mlxu.WandBLogger(
-        config=FLAGS.logger,
-        variant=variant,
-        enable=FLAGS.log_all_worker or (jax.process_index() == 0),
-    )
+    # logger = mlxu.WandBLogger(
+    #     config=FLAGS.logger,
+    #     variant=variant,
+    #     enable=FLAGS.log_all_worker or (jax.process_index() == 0),
+    # )
     set_random_seed(FLAGS.seed)
 
     tokenizer = AutoTokenizer.from_pretrained(FLAGS.tokenizer)
@@ -146,7 +146,7 @@ def main(argv):
         train_state_partition, train_state_shapes
     )
     checkpointer = StreamingCheckpointer(
-        FLAGS.checkpointer, logger.output_dir,
+        FLAGS.checkpointer, "/mnt/persistent-disk/easy/output/",
         enable=jax.process_index() == 0,
     )
 
@@ -170,12 +170,12 @@ def main(argv):
         donate_argnums=(0, 1),
     )
 
-    sharded_eval_step = pjit(
-        eval_step,
-        in_shardings=(train_state_partition, PS(), PS()),
-        out_shardings=(PS(), PS()),
-        donate_argnums=(1,),
-    )
+    # sharded_eval_step = pjit(
+    #     eval_step,
+    #     in_shardings=(train_state_partition, PS(), PS()),
+    #     out_shardings=(PS(), PS()),
+    #     donate_argnums=(1,),
+    # )
 
     # def save_checkpoint(train_state, milestone=False):
     #     step = int(jax.device_get(train_state.step))
