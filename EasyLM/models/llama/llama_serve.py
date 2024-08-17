@@ -21,7 +21,7 @@ from EasyLM.jax_utils import (
     with_sharding_constraint, FlaxTemperatureLogitsWarper
 )
 from EasyLM.models.llama.llama_model import (
-    LLaMAConfigurator, FlaxLLaMAForCausalLM
+    LLaMAConfigurator, LLaMACausalLMModel
 )
 
 
@@ -64,7 +64,7 @@ def main(argv):
             FLAGS.load_checkpoint, disallow_trainstate=True
         )
 
-        hf_model = FlaxLLaMAForCausalLM(
+        hf_model = LLaMACausalLMModel(
             llama_config,
             input_shape=(1, FLAGS.seq_length),
             seed=FLAGS.seed,

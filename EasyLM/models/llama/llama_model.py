@@ -46,8 +46,8 @@ class LLaMAConfigurator(object):
         config.attention_dropout = mlxu.config_placeholder(float)
         config.residue_dropout = mlxu.config_placeholder(float)
         config.remat_policy = mlxu.config_placeholder(str)
-        config.scan_attention = mlxu.config_placeholder(bool)
-        config.scan_mlp = mlxu.config_placeholder(bool)
+        config.scan_attention = False # mlxu.config_placeholder(bool)
+        config.scan_mlp = False # mlxu.config_placeholder(bool)
         config.scan_query_chunk_size = mlxu.config_placeholder(int)
         config.scan_key_chunk_size = mlxu.config_placeholder(int)
         config.scan_mlp_chunk_size = mlxu.config_placeholder(int)
@@ -222,7 +222,7 @@ def apply_rotary_emb(
 
 
 
-class FlaxLLaMAAttention(nn.Module):
+class Attention(nn.Module):
     config: PretrainedConfig
     dtype: jnp.dtype=jnp.float32
     param_dtype: jnp.dtype=jnp.float32
@@ -351,35 +351,7 @@ class FlaxLLaMAAttention(nn.Module):
             dropout_rng = self.make_rng("dropout")
 
         if self.config.scan_attention and not (self.has_variable("cache", "cached_key") or init_cache):
-            # doesn't need blockwise attention if we are doing autoregressive decoding since no quadratic memory
-
-            # attention mask without nxn materlization, blockwise_attn will handle the rest
-            attention_mask = jnp.expand_dims(attention_mask, axis=(-3, -2))
-            # transform boolean mask into float mask
-            attention_bias = jax.lax.select(
-                attention_mask > 0,
-                jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
-                jnp.full(attention_mask.shape, jnp.finfo(self.dtype).min).astype(self.dtype),
-            )
-            attn_weights = None
-            attn_output = blockwise_attn(
-                xq,
-                xk,
-                xv,
-                bias=attention_bias,
-                deterministic=deterministic,
-                dropout_rng=dropout_rng,
-                attn_pdrop=self.config.attention_dropout,
-                causal=True,
-                query_chunk_size=self.config.scan_query_chunk_size,
-                key_chunk_size=self.config.scan_key_chunk_size,
-                dtype=self.dtype,
-                policy=get_gradient_checkpoint_policy('nothing_saveable'),
-                precision=self.precision,
-                float32_logits=True,
-                prevent_cse=True,
-            )
-            attn_output = with_sharding_constraint(attn_output, PS(("dp", "fsdp"), None, "mp", None))
+            raise NotImplementedError, "Attention with scan_attention is not implemented yet."
         else:
             query_length, key_length = xq.shape[1], xk.shape[1]
             with jax.ensure_compile_time_eval():
@@ -434,7 +406,7 @@ class FlaxLLaMAAttention(nn.Module):
         return outputs
 
 
-class FlaxLLaMAMLP(nn.Module):
+class FeedForward(nn.Module):
     config: PretrainedConfig
     dtype: jnp.dtype=jnp.float32
     param_dtype: jnp.dtype=jnp.float32
@@ -480,20 +452,20 @@ class FlaxLLaMAMLP(nn.Module):
         return x
 
 
-class FlaxLLaMABlock(nn.Module):
+class TransformerBlock(nn.Module):
     config: PretrainedConfig
     dtype: jnp.dtype=jnp.float32
     param_dtype: jnp.dtype=jnp.float32
     precision: Optional[Union[jax.lax.Precision, str]]=None
 
     def setup(self) -> None:
-        self.attention = FlaxLLaMAAttention(
+        self.attention = Attention(
             self.config,
             dtype=self.dtype,
             param_dtype=self.param_dtype,
             precision=self.precision,
         )
-        self.feed_forward = FlaxLLaMAMLP(
+        self.feed_forward = FeedForward(
             self.config,
             dtype=self.dtype,
             param_dtype=self.param_dtype,
@@ -554,7 +526,7 @@ class FlaxLLaMABlock(nn.Module):
 
         return (hidden_states,) + attn_outputs[1:]
 
-
+# Inheriting HuggingFace's FlaxPreTrainedModel.
 class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -687,17 +659,17 @@ class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
         return outputs
 
 
-class FlaxLLaMABlockCollection(nn.Module):
+class TransformerBlockCollection(nn.Module):
     config: PretrainedConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype=jnp.float32
     precision: Optional[Union[jax.lax.Precision, str]]=None
 
     def setup(self):
-        block = FlaxLLaMABlock
+        block = TransformerBlock
         if self.config.remat_policy != '':
             block = nn.remat(
-                FlaxLLaMABlock, static_argnums=(4, 5, 6),
+                TransformerBlock, static_argnums=(4, 5, 6),
                 policy=get_gradient_checkpoint_policy(self.config.remat_policy)
             )
         self.blocks = [
@@ -764,7 +736,7 @@ class FlaxLLaMABlockCollection(nn.Module):
         return outputs
 
 
-class FlaxLLaMAModule(nn.Module):
+class LLaMAModule(nn.Module):
     config: PretrainedConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype=jnp.float32
@@ -781,7 +753,7 @@ class FlaxLLaMAModule(nn.Module):
             param_dtype=self.param_dtype,
         )
         self.dropout = nn.Dropout(rate=self.config.embedding_dropout)
-        self.h = FlaxLLaMABlockCollection(
+        self.h = TransformerBlockCollection(
             self.config,
             dtype=self.dtype,
             param_dtype=self.param_dtype,
@@ -838,18 +810,18 @@ class FlaxLLaMAModule(nn.Module):
         )
 
 
-class FlaxLLaMAModel(FlaxLLaMAPreTrainedModel):
-    module_class = FlaxLLaMAModule
+class Model(FlaxLLaMAPreTrainedModel):
+    module_class = LLaMAModule
 
 
-class FlaxLLaMAForCausalLMModule(nn.Module):
+class CausalLMModule(nn.Module):
     config: PretrainedConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype=jnp.float32
     precision: Optional[Union[jax.lax.Precision, str]]=None
 
     def setup(self):
-        self.transformer = FlaxLLaMAModule(self.config, dtype=self.dtype)
+        self.transformer = LLaMAModule(self.config, dtype=self.dtype)
         self.lm_head = nn.Dense(
             self.config.vocab_size,
             dtype=self.dtype,
@@ -900,8 +872,8 @@ class FlaxLLaMAForCausalLMModule(nn.Module):
         return FlaxCausalLMOutput(logits=lm_logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions)
 
 
-class FlaxLLaMAForCausalLM(FlaxLLaMAPreTrainedModel):
-    module_class = FlaxLLaMAForCausalLMModule
+class LLaMACausalLMModel(FlaxLLaMAPreTrainedModel):
+    module_class = CausalLMModule
 
     def prepare_inputs_for_generation(self, input_ids, max_length, attention_mask: Optional[jax.Array] = None):
         # initializing the cache

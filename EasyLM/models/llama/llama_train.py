@@ -22,7 +22,7 @@ from EasyLM.jax_utils import (
     with_sharding_constraint,
 )
 from EasyLM.models.llama.llama_model import (
-    LLaMAConfigurator, FlaxLLaMAForCausalLMModule
+    LLaMAConfigurator, CausalLMModule
 )
 
 
@@ -64,7 +64,7 @@ def main(argv):
     seq_length = dataset.seq_length
     llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
 
-    model = FlaxLLaMAForCausalLMModule(
+    model = CausalLMModule(
         llama_config,
         dtype=get_float_dtype_by_name(FLAGS.dtype),
         param_dtype=get_float_dtype_by_name(FLAGS.param_dtype),
