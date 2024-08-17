@@ -102,90 +102,6 @@ class LLaMAConfigurator(object):
                 num_key_value_heads=4,
                 rms_norm_eps=1e-6,
             ),
-            'llama_1b': dict(
-                base_model='llama_1b',
-                hidden_size=2048,
-                intermediate_size=5504,
-                num_hidden_layers=22,
-                num_attention_heads=16,
-                num_key_value_heads=16,
-                rms_norm_eps=1e-6,
-            ),
-            'llama_3b': dict(
-                base_model='llama_3b',
-                hidden_size=3200,
-                intermediate_size=8640,
-                num_hidden_layers=26,
-                num_attention_heads=32,
-                num_key_value_heads=32,
-                rms_norm_eps=1e-6,
-            ),
-            'llama_7b': dict(
-                base_model='llama_7b',
-                hidden_size=4096,
-                intermediate_size=11008,
-                num_hidden_layers=32,
-                num_attention_heads=32,
-                num_key_value_heads=32,
-                rms_norm_eps=1e-6,
-            ),
-            'llama_13b': dict(
-                base_model='llama_13b',
-                hidden_size=5120,
-                intermediate_size=13824,
-                num_hidden_layers=40,
-                num_attention_heads=40,
-                num_key_value_heads=40,
-                rms_norm_eps=1e-6,
-            ),
-            'llama_30b': dict(
-                base_model='llama_30b',
-                hidden_size=6656,
-                intermediate_size=17920,
-                num_hidden_layers=60,
-                num_attention_heads=52,
-                num_key_value_heads=52,
-                rms_norm_eps=1e-6,
-            ),
-            'llama_65b': dict(
-                base_model='llama_65b',
-                hidden_size=8192,
-                intermediate_size=22016,
-                num_hidden_layers=80,
-                num_attention_heads=64,
-                num_key_value_heads=64,
-                rms_norm_eps=1e-5,
-            ),
-            'llama2_7b': dict(
-                base_model='llama2_7b',
-                hidden_size=4096,
-                intermediate_size=11008,
-                num_hidden_layers=32,
-                num_attention_heads=32,
-                num_key_value_heads=32,
-                max_position_embeddings=4096,
-                rms_norm_eps=1e-5,
-            ),
-            'llama2_13b': dict(
-                base_model='llama2_13b',
-                hidden_size=5120,
-                intermediate_size=13824,
-                num_hidden_layers=40,
-                num_attention_heads=40,
-                num_key_value_heads=40,
-                max_position_embeddings=4096,
-                rms_norm_eps=1e-5,
-            ),
-            'llama2_70b': dict(
-                base_model='llama_65b',
-                hidden_size=8192,
-                intermediate_size=28672,
-                num_hidden_layers=80,
-                num_attention_heads=64,
-                num_key_value_heads=8,
-                max_position_embeddings=4096,
-                rms_norm_eps=1e-5,
-            ),
             'llama3_8b': dict(
                 base_model='llama3_8b',
                 vocab_size=128256,
@@ -281,6 +197,7 @@ def apply_rotary_emb(
         theta: float=10000.0
 ):
     input_dtype = xq.dtype
+
     with jax.ensure_compile_time_eval():
         dim = xq.shape[-1]
         freqs = 1.0 / (theta ** (jnp.arange(0, dim, 2)[: (dim // 2)].astype(jnp.float32) / dim))
@@ -288,6 +205,7 @@ def apply_rotary_emb(
         freqs = jnp.outer(t, freqs).astype(jnp.float32)
         sin, cos = jnp.sin(freqs), jnp.cos(freqs)
         freqs_cis = jnp.complex64(cos + 1j * sin)
+
     freqs_cis = jnp.take(freqs_cis, position_ids, axis=0)
     reshape_xq = xq.astype(jnp.float32).reshape(*xq.shape[:-1], -1, 2)
     reshape_xk = xk.astype(jnp.float32).reshape(*xk.shape[:-1], -1, 2)
