@@ -131,12 +131,18 @@ class HuggingfaceDataset(object):
     @staticmethod
     def get_default_config(updates=None):
         config = mlxu.config_dict()
-        config.path = 'c4'
-        config.name = 'en'
+        # config.path = 'c4'
+        # config.name = 'en'
+        # config.split = 'train'
+        # config.streaming = False
+        # config.seq_length = 1024
+        # config.batch_size = 8
+        config.path = 'wikipedia'  # Changed from 'c4' to 'wikipedia'
+        config.name = '20220301.en'  # Changed from 'en' to '20220301.en'
         config.split = 'train'
-        config.streaming = False
-        config.seq_length = 1024
-        config.batch_size = 8
+        config.streaming = True  # Changed from False to True
+        config.seq_length = 512  # Reduced from 1024 to 512
+        config.batch_size = 4  # Reduced 
         config.always_start_with_bos = False
         config.batch_token_dtype = 'i4'
         return mlxu.update_config_dict(config, updates)
