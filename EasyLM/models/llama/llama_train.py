@@ -222,8 +222,9 @@ def main(argv):
             train_state, sharded_rng, metrics = sharded_train_step(
                 train_state, sharded_rng, batch
             )
-
+            # import pdb; pdb.set_trace()
             print(f"step {step}")
+            print(f"loss {metrics['loss']}")
             # if step % FLAGS.log_freq == 0:
             #     if FLAGS.eval_steps > 0:
             #         eval_metric_list = []
