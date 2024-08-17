@@ -351,7 +351,7 @@ class Attention(nn.Module):
             dropout_rng = self.make_rng("dropout")
 
         if self.config.scan_attention and not (self.has_variable("cache", "cached_key") or init_cache):
-            raise NotImplementedError, "Attention with scan_attention is not implemented yet."
+            raise NotImplementedError("Attention with scan_attention is not implemented yet.")
         else:
             query_length, key_length = xq.shape[1], xk.shape[1]
             with jax.ensure_compile_time_eval():
