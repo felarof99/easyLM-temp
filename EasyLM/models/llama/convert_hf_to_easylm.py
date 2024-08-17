@@ -41,7 +41,7 @@ def main(argv):
     start = time.time()
     llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
     huggingface_token = input("INPUT: Please provide your HUGGINGFACE_TOKEN: ")
-    hf_model = AutoModelForCausalLM.from_pretrained(, token=huggingface_token)
+    hf_model = AutoModelForCausalLM.from_pretrained(FLAGS.hf_model, token=huggingface_token)
     ckpt = hf_model.state_dict()
 
     print(f"Start convert weight to easylm format...")
