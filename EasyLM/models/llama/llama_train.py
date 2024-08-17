@@ -71,7 +71,17 @@ def main(argv):
     )
 
     optimizer, optimizer_info = OptimizerFactory.get_optimizer(FLAGS.optimizer)
-
+    
+    def init_fn(rng):
+        rng_generator = JaxRNG(rng)
+        params = model.init(
+            input_ids=jnp.zeros((4, seq_length), dtype=jnp.int32),
+            position_ids=jnp.zeros((4, seq_length), dtype=jnp.int32),
+            attention_mask=jnp.ones((4, seq_length), dtype=jnp.int32),
+            rngs=rng_generator(LLaMAConfigurator.rng_keys()),
+        )
+        return TrainState.create(params=params, tx=optimizer, apply_fn=None)
+        
     def create_trainstate_from_params(params):
         return TrainState.create(params=params, tx=optimizer, apply_fn=None)
 
