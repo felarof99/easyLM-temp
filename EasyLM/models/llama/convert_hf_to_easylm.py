@@ -31,9 +31,30 @@ FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
 
 
 def inverse_permute(w, n_heads, input_dim, output_dim):
+    """
+    Rearrange the weight matrix for LLaMA's attention mechanism.
+
+    This function performs the inverse of the permutation applied in the original LLaMA implementation.
+    It's used to convert weights from HuggingFace format to EasyLM format.
+
+    Args:
+        w (numpy.ndarray): Input weight matrix
+        n_heads (int): Number of attention heads
+        input_dim (int): Input dimension
+        output_dim (int): Output dimension
+
+    Returns:
+        numpy.ndarray: Rearranged weight matrix
+    """
+    # Reshape the input weight matrix
     reshaped_w = w.reshape(n_heads, 2, output_dim // n_heads // 2, input_dim)
+    
+    # Transpose the reshaped matrix to swap dimensions
     transposed_w = reshaped_w.transpose(0, 2, 1, 3)
+    
+    # Flatten the transposed matrix back to 2D
     inverted_w = transposed_w.reshape(output_dim, input_dim)
+    
     return inverted_w
 
 
