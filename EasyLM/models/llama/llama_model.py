@@ -50,11 +50,11 @@ class LLaMAConfigurator(object):
         config.remat_policy = mlxu.config_placeholder(str)
         config.scan_attention = False  # mlxu.config_placeholder(bool)
         config.scan_mlp = False  # mlxu.config_placeholder(bool)
-        config.scan_query_chunk_size = mlxu.config_placeholder(int)
-        config.scan_key_chunk_size = mlxu.config_placeholder(int)
-        config.scan_mlp_chunk_size = mlxu.config_placeholder(int)
-        config.fcm_min_ratio = mlxu.config_placeholder(float)
-        config.fcm_max_ratio = mlxu.config_placeholder(float)
+        config.scan_query_chunk_size = 0 #mlxu.config_placeholder(int)
+        config.scan_key_chunk_size = 0 # mlxu.config_placeholder(int)
+        config.scan_mlp_chunk_size = 0 # mlxu.config_placeholder(int)
+        config.fcm_min_ratio = 0.0 # mlxu.config_placeholder(float)
+        config.fcm_max_ratio = 0.0 # mlxu.config_placeholder(float)
         return mlxu.update_config_dict(config, updates)
 
     @classmethod
@@ -64,7 +64,7 @@ class LLaMAConfigurator(object):
         for key, value in config.items():
             if value is not None:
                 standard_config[key] = value
-
+        # This is where you get pretrained config from huggingface merged with your updates.
         return PretrainedConfig.from_dict(standard_config)
 
     @classmethod
@@ -504,17 +504,12 @@ class TransformerBlock(nn.Module):
         feed_forward_input = self.ffn_norm(hidden_states)
 
         if self.config.scan_mlp:
-            feed_forward_hidden_states = blockwise_ffn(
-                self.feed_forward,
-                feed_forward_input,
-                self.config.scan_mlp_chunk_size,
-                deterministic,
-            )
-        else:
-            feed_forward_hidden_states = self.feed_forward(
-                feed_forward_input,
-                deterministic,
-            )
+            raise NotImplementedError("ScanMLP is not implemented yet.")
+
+        feed_forward_hidden_states = self.feed_forward(
+            feed_forward_input,
+            deterministic,
+        )
         feed_forward_hidden_states = with_sharding_constraint(
             feed_forward_hidden_states, PS(("dp", "fsdp"), None, "mp")
         )
@@ -522,6 +517,65 @@ class TransformerBlock(nn.Module):
         hidden_states = hidden_states + feed_forward_hidden_states
 
         return (hidden_states,) + attn_outputs[1:]
+
+
+
+class TransformerBlockCollection(nn.Module):
+    config: PretrainedConfig
+    dtype: jnp.dtype = jnp.float32
+    param_dtype: jnp.dtype = jnp.float32
+    precision: Optional[Union[jax.lax.Precision, str]] = None
+
+    def setup(self):
+        block = TransformerBlock
+        self.blocks = [
+            block(
+                self.config,
+                name=str(i),
+                dtype=self.dtype,
+                param_dtype=self.param_dtype,
+                precision=self.precision,
+            )
+            for i in range(self.config.num_hidden_layers)
+        ]
+
+    def __call__(
+        self,
+        hidden_states,
+        attention_mask=None,
+        position_ids=None,
+        deterministic: bool = True,
+        init_cache: bool = False,
+        output_attentions: bool = False,
+        output_hidden_states: bool = False,
+    ):
+        all_attentions = () if output_attentions else None
+        all_hidden_states = () if output_hidden_states else None
+
+        fcm_mask = None
+
+        for block in self.blocks:
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
+
+            layer_outputs = block(
+                hidden_states,
+                attention_mask,
+                position_ids,
+                deterministic,
+                init_cache,
+                output_attentions,
+                fcm_mask,
+            )
+            hidden_states = layer_outputs[0]
+
+            if output_attentions:
+                all_attentions += (layer_outputs[1],)
+
+        # this contains possible `None` values - `FlaxGPTJModule` will filter them out
+        outputs = (hidden_states, all_hidden_states, all_attentions)
+
+        return outputs
 
 
 # Inheriting HuggingFace's FlaxPreTrainedModel.
@@ -644,89 +698,7 @@ class FlaxLLaMAPreTrainedModel(FlaxPreTrainedModel):
         return outputs
 
 
-class TransformerBlockCollection(nn.Module):
-    config: PretrainedConfig
-    dtype: jnp.dtype = jnp.float32
-    param_dtype: jnp.dtype = jnp.float32
-    precision: Optional[Union[jax.lax.Precision, str]] = None
-
-    def setup(self):
-        block = TransformerBlock
-        if self.config.remat_policy != "":
-            block = nn.remat(
-                TransformerBlock,
-                static_argnums=(4, 5, 6),
-                policy=get_gradient_checkpoint_policy(self.config.remat_policy),
-            )
-        self.blocks = [
-            block(
-                self.config,
-                name=str(i),
-                dtype=self.dtype,
-                param_dtype=self.param_dtype,
-                precision=self.precision,
-            )
-            for i in range(self.config.num_hidden_layers)
-        ]
-
-    def __call__(
-        self,
-        hidden_states,
-        attention_mask=None,
-        position_ids=None,
-        deterministic: bool = True,
-        init_cache: bool = False,
-        output_attentions: bool = False,
-        output_hidden_states: bool = False,
-    ):
-        all_attentions = () if output_attentions else None
-        all_hidden_states = () if output_hidden_states else None
-
-        if not deterministic and self.config.fcm_max_ratio > 0:
-            # Apply forgetful causal mask
-            batch_size, seq_length = hidden_states.shape[0], hidden_states.shape[1]
-            fcm_ratio = jax.random.uniform(
-                self.make_rng("fcm"),
-                shape=(batch_size, 1, 1, 1),
-                minval=self.config.fcm_min_ratio,
-                maxval=self.config.fcm_max_ratio,
-            )
-            fcm_mask = (
-                jax.random.uniform(
-                    self.make_rng("fcm"), shape=(batch_size, 1, 1, seq_length)
-                )
-                > fcm_ratio
-            )
-            fcm_mask = fcm_mask.at[:, :, :, 0].set(True)
-            fcm_mask = fcm_mask.astype("bool")
-        else:
-            fcm_mask = None
-
-        for block in self.blocks:
-            if output_hidden_states:
-                all_hidden_states += (hidden_states,)
-
-            layer_outputs = block(
-                hidden_states,
-                attention_mask,
-                position_ids,
-                deterministic,
-                init_cache,
-                output_attentions,
-                fcm_mask,
-            )
-            hidden_states = layer_outputs[0]
-
-            if output_attentions:
-                all_attentions += (layer_outputs[1],)
-
-        # this contains possible `None` values - `FlaxGPTJModule` will filter them out
-        outputs = (hidden_states, all_hidden_states, all_attentions)
-
-        return outputs
-
-
-class LLaMAModule(nn.Module):
+class LlamaModule(nn.Module):
     config: PretrainedConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype = jnp.float32
@@ -801,19 +773,14 @@ class LLaMAModule(nn.Module):
             attentions=outputs[-1],
         )
 
-
-class Model(FlaxLLaMAPreTrainedModel):
-    module_class = LLaMAModule
-
-
-class CausalLMModule(nn.Module):
+class CausalLlamaModule(nn.Module):
     config: PretrainedConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype = jnp.float32
     precision: Optional[Union[jax.lax.Precision, str]] = None
 
     def setup(self):
-        self.transformer = LLaMAModule(self.config, dtype=self.dtype)
+        self.transformer = LlamaModule(self.config, dtype=self.dtype)
         self.lm_head = nn.Dense(
             self.config.vocab_size,
             dtype=self.dtype,
@@ -866,35 +833,3 @@ class CausalLMModule(nn.Module):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
-
-
-class CausalLMModel(FlaxLLaMAPreTrainedModel):
-    module_class = CausalLMModule
-
-    def prepare_inputs_for_generation(
-        self, input_ids, max_length, attention_mask: Optional[jax.Array] = None
-    ):
-        # initializing the cache
-        batch_size, seq_length = input_ids.shape
-        # Note that usually one would have to put 0's in the attention_mask for x > input_ids.shape[-1] and x < cache_length.
-        # But since GPTJ uses a causal mask, those positions are masked anyways.
-        # Thus we can create a single static attention_mask here, which is more efficient for compilation
-        extended_attention_mask = jnp.ones((batch_size, max_length), dtype="i4")
-        if attention_mask is not None:
-            position_ids = attention_mask.cumsum(axis=-1) - 1
-            extended_attention_mask = jax.lax.dynamic_update_slice(
-                extended_attention_mask, attention_mask, (0, 0)
-            )
-        else:
-            position_ids = jnp.broadcast_to(
-                jnp.arange(seq_length, dtype="i4")[None, :], (batch_size, seq_length)
-            )
-
-        return {
-            "attention_mask": extended_attention_mask,
-            "position_ids": position_ids,
-        }
-
-    def update_inputs_for_generation(self, model_outputs, model_kwargs):
-        model_kwargs["position_ids"] = model_kwargs["position_ids"][:, -1:] + 1
-        return model_kwargs

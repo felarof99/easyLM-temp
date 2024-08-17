@@ -22,34 +22,11 @@ from EasyLM.jax_utils import (
     with_sharding_constraint,
 )
 from EasyLM.models.llama.llama_model import (
-    LLaMAConfigurator, CausalLMModule
+    LLaMAConfigurator, CausalLlamaModule
 )
 
 
-FLAGS, FLAGS_DEF = mlxu.define_flags_with_default(
-    # seed=42,
-    # mesh_dim='1,-1,1',
-    # dtype='fp32',
-    # param_dtype='fp32',
-    # total_steps=10000,
-    # load_llama_config='',
-    # update_llama_config='',
-    # load_checkpoint='',
-    # load_dataset_state='',
-    # log_freq=50,
-    # save_model_freq=0,
-    # save_milestone_freq=0,
-    # eval_steps=0,
-    # tokenizer='openlm-research/open_llama_3b_v2',
-    # train_dataset=DatasetFactory.get_default_config(),
-    # eval_dataset=DatasetFactory.get_default_config(),
-    # optimizer=OptimizerFactory.get_default_config(),
-    # checkpointer=StreamingCheckpointer.get_default_config(),
-    # llama=LLaMAConfigurator.get_default_config(),
-    # logger=mlxu.WandBLogger.get_default_config(),
-    # log_all_worker=False,
-    # jax_distributed=JaxDistributedConfig.get_default_config(),
-)
+FLAGS, FLAGS_DEF = mlxu.define_flags_with_default()
 
 
 def main(argv):
@@ -64,8 +41,8 @@ def main(argv):
     seq_length = dataset.seq_length
     llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
 
-    model = CausalLMModule(
-        llama_config,
+    model = CausalLlamaModule(
+        llama_config, # Merges with PretrainedConfig from huggingface.
         dtype=get_float_dtype_by_name(FLAGS.dtype),
         param_dtype=get_float_dtype_by_name(FLAGS.param_dtype),
     )
