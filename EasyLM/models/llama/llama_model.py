@@ -165,7 +165,6 @@ class LLaMAConfigurator(object):
     def rng_keys():
         return ("params", "dropout", "fcm")
 
-
 class RMSNorm(nn.Module):
     dim: int
     eps: float = 1e-6
@@ -188,7 +187,6 @@ class RMSNorm(nn.Module):
         output = self._norm(x).astype(self.dtype)
         weight = jnp.asarray(self.weight, self.dtype)
         return output * weight
-
 
 def apply_rotary_emb(
     xq: jnp.ndarray,
@@ -226,7 +224,6 @@ def apply_rotary_emb(
         *xk_out.shape[:-1], -1
     )
     return xq_out.astype(input_dtype), xk_out.astype(input_dtype)
-
 
 class Attention(nn.Module):
     config: PretrainedConfig
@@ -330,23 +327,11 @@ class Attention(nn.Module):
         if not deterministic and self.config.attention_dropout > 0.0:
             dropout_rng = self.make_rng("dropout")
 
-        if self.config.scan_attention and not (
-            self.has_variable("cache", "cached_key") or init_cache
-        ):
-            raise NotImplementedError(
-                "Attention with scan_attention is not implemented yet."
-            )
-
         query_length, key_length = xq.shape[1], xk.shape[1]
         with jax.ensure_compile_time_eval():
             full_causal_mask = make_causal_mask(
                 jnp.ones((1, self.config.max_position_embeddings), dtype="bool"),
                 dtype="bool",
-            )
-
-        if self.has_variable("cache", "cached_key"):
-            raise NotImplementedError(
-                "Rmoved caching KV for now."
             )
             
         causal_mask = full_causal_mask[:, :, :query_length, :key_length]
@@ -360,13 +345,6 @@ class Attention(nn.Module):
             jnp.expand_dims(attention_mask, axis=(-3, -2)), causal_mask.shape
         )
         attention_mask = combine_masks(attention_mask, causal_mask, fcm_mask)
-
-        # During fast autoregressive decoding, we feed one position at a time,
-        # and cache the keys and values step by step.
-        if self.has_variable("cache", "cached_key") or init_cache:
-            raise NotImplementedError(
-                "Rmoved caching KV for now."
-            )
 
         # transform boolean mask into float mask
         attention_bias = jax.lax.select(
@@ -399,7 +377,6 @@ class Attention(nn.Module):
 
         outputs = (attn_output, attn_weights) if output_attentions else (attn_output,)
         return outputs
-
 
 class FeedForward(nn.Module):
     config: PretrainedConfig
@@ -445,7 +422,6 @@ class FeedForward(nn.Module):
         x = self.w2(nn.silu(self.w1(x)) * self.w3(x))
         x = self.dropout(x, deterministic=deterministic)
         return x
-
 
 class TransformerBlock(nn.Module):
     config: PretrainedConfig
@@ -517,8 +493,6 @@ class TransformerBlock(nn.Module):
         hidden_states = hidden_states + feed_forward_hidden_states
 
         return (hidden_states,) + attn_outputs[1:]
-
-
 
 class TransformerBlockCollection(nn.Module):
     config: PretrainedConfig
