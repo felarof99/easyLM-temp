@@ -39,20 +39,30 @@ def inverse_permute(w, n_heads, input_dim, output_dim):
 
 def main(argv):
     start = time.time()
+    # Initialize LLaMA configuration
     llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
+    
+    # Request HuggingFace token from user
     huggingface_token = input("INPUT: Please provide your HUGGINGFACE_TOKEN: ")
+    
+    # Load the HuggingFace model
     hf_model = AutoModelForCausalLM.from_pretrained(FLAGS.hf_model, token=huggingface_token)
     ckpt = hf_model.state_dict()
 
     print(f"Start convert weight to easylm format...")
+    
+    # Convert weights to EasyLM format
     jax_weights = {
         "transformer": {
+            # Embedding layer
             "wte": {"embedding": ckpt["model.embed_tokens.weight"].numpy()},
+            # Final layer norm
             "ln_f": {"kernel": ckpt["model.norm.weight"].numpy()},
+            # Transformer layers
             "h": {
-                "%d"
-                % (layer): {
+                "%d" % (layer): {
                     "attention": {
+                        # Query projection
                         "wq": {
                             "kernel": inverse_permute(
                                 ckpt[f"model.layers.{layer}.self_attn.q_proj.weight"].numpy(),
@@ -61,6 +71,7 @@ def main(argv):
                                 llama_config.hidden_size,
                             ).transpose()
                         },
+                        # Key projection
                         "wk": {
                             "kernel": inverse_permute(
                                 ckpt[f"model.layers.{layer}.self_attn.k_proj.weight"].numpy(),
@@ -72,32 +83,39 @@ def main(argv):
                                 ),
                             ).transpose()
                         },
+                        # Value projection
                         "wv": {
                             "kernel": ckpt[f"model.layers.{layer}.self_attn.v_proj.weight"]
                             .numpy().transpose()
                         },
+                        # Output projection
                         "wo": {
                             "kernel": ckpt[f"model.layers.{layer}.self_attn.o_proj.weight"]
                             .numpy().transpose()
                         },
                     },
                     "feed_forward": {
+                        # First feed-forward layer
                         "w1": {
                             "kernel": ckpt[f"model.layers.{layer}.mlp.gate_proj.weight"]
                             .numpy().transpose()
                         },
+                        # Second feed-forward layer
                         "w2": {
                             "kernel": ckpt[f"model.layers.{layer}.mlp.down_proj.weight"]
                             .numpy().transpose()
                         },
+                        # Third feed-forward layer
                         "w3": {
                             "kernel": ckpt[f"model.layers.{layer}.mlp.up_proj.weight"]
                             .numpy().transpose()
                         },
                     },
+                    # Layer norm before attention
                     "attention_norm": {
                         "kernel": ckpt[f"model.layers.{layer}.input_layernorm.weight"].numpy()
                     },
+                    # Layer norm after attention
                     "ffn_norm": {
                         "kernel": ckpt[
                             f"model.layers.{layer}.post_attention_layernorm.weight"
@@ -107,11 +125,13 @@ def main(argv):
                 for layer in range(llama_config.num_hidden_layers)
             },
         },
+        # Language model head
         "lm_head": {"kernel": ckpt["lm_head.weight"].numpy().transpose()},
     }
     print(f"Convert weight to easylm format finished...")
     print(f"Start to save...")
 
+    # Save weights
     if FLAGS.streaming:
         StreamingCheckpointer.save_train_state_to_file(
             jax_weights,
