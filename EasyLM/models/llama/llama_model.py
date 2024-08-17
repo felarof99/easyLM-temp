@@ -872,7 +872,7 @@ class CausalLMModule(nn.Module):
         return FlaxCausalLMOutput(logits=lm_logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions)
 
 
-class LLaMACausalLMModel(FlaxLLaMAPreTrainedModel):
+class CausalLMModel(FlaxLLaMAPreTrainedModel):
     module_class = CausalLMModule
 
     def prepare_inputs_for_generation(self, input_ids, max_length, attention_mask: Optional[jax.Array] = None):
