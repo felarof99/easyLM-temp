@@ -226,6 +226,10 @@ def apply_rotary_emb(
     return xq_out.astype(input_dtype), xk_out.astype(input_dtype)
 
 class Attention(nn.Module):
+    """
+    Attention module for the LLaMA model.
+    Implements multi-head attention with support for grouped-query attention.
+    """
     config: PretrainedConfig
     dtype: jnp.dtype = jnp.float32
     param_dtype: jnp.dtype = jnp.float32
@@ -235,6 +239,8 @@ class Attention(nn.Module):
         config = self.config
         head_dim = config.hidden_size // config.num_attention_heads
 
+        # Define the query, key, value, and output projection layers
+        # Note: In grouped-query attention, we have fewer key-value heads than query heads
         self.wq = nn.Dense(
             config.num_attention_heads * head_dim,
             dtype=self.dtype,
@@ -276,6 +282,7 @@ class Attention(nn.Module):
             precision=self.precision,
         )
 
+        # Dropout layer for regularization
         self.resid_dropout = nn.Dropout(rate=config.residue_dropout)
 
     def __call__(
@@ -288,21 +295,25 @@ class Attention(nn.Module):
         output_attentions: bool = False,
         fcm_mask=None,
     ):
+        # Project input hidden states to query, key, and value
         xq, xk, xv = (
             self.wq(hidden_states),
             self.wk(hidden_states),
             self.wv(hidden_states),
         )
 
+        # Apply sharding constraints for parallel processing
         xq = with_sharding_constraint(xq, PS(("dp", "fsdp"), None, "mp"))
         xk = with_sharding_constraint(xk, PS(("dp", "fsdp"), None, "mp"))
         xv = with_sharding_constraint(xv, PS(("dp", "fsdp"), None, "mp"))
 
+        # Reshape query for multi-head attention
         xq = einops.rearrange(
             xq,
             "b s (h d) -> b s h d",
             h=self.config.num_attention_heads,
         )
+        # Reshape and repeat key and value for grouped-query attention
         xk = einops.repeat(
             xk,
             "b s (h d) -> b s (h g) d",
@@ -316,6 +327,7 @@ class Attention(nn.Module):
             g=self.config.num_attention_heads // self.config.num_key_value_heads,
         )
 
+        # Apply rotary positional embeddings
         xq, xk = apply_rotary_emb(
             xq,
             xk,
@@ -323,10 +335,12 @@ class Attention(nn.Module):
             max_pos=self.config.max_position_embeddings,
         )
 
+        # Set up dropout for attention (if not in deterministic mode)
         dropout_rng = None
         if not deterministic and self.config.attention_dropout > 0.0:
             dropout_rng = self.make_rng("dropout")
 
+        # Create causal mask to ensure the model can only attend to previous tokens
         query_length, key_length = xq.shape[1], xk.shape[1]
         with jax.ensure_compile_time_eval():
             full_causal_mask = make_causal_mask(
@@ -336,17 +350,19 @@ class Attention(nn.Module):
             
         causal_mask = full_causal_mask[:, :, :query_length, :key_length]
 
+        # Broadcast causal mask to batch size
         batch_size = hidden_states.shape[0]
         causal_mask = jnp.broadcast_to(
             causal_mask, (batch_size,) + causal_mask.shape[1:]
         )
 
+        # Combine attention mask with causal mask and optional FCM mask
         attention_mask = jnp.broadcast_to(
             jnp.expand_dims(attention_mask, axis=(-3, -2)), causal_mask.shape
         )
         attention_mask = combine_masks(attention_mask, causal_mask, fcm_mask)
 
-        # transform boolean mask into float mask
+        # Convert boolean mask to float mask for attention computation
         attention_bias = jax.lax.select(
             attention_mask > 0,
             jnp.full(attention_mask.shape, 0.0).astype(self.dtype),
@@ -354,6 +370,8 @@ class Attention(nn.Module):
                 self.dtype
             ),
         )
+
+        # Compute attention weights
         attn_weights = dot_product_attention_weights(
             xq,
             xk,
@@ -364,17 +382,25 @@ class Attention(nn.Module):
             dtype=jnp.promote_types(self.dtype, jnp.float32),
             precision=self.precision,
         )
+
+        # Apply sharding constraint to attention weights
         attn_weights = with_sharding_constraint(
             attn_weights, PS(("dp", "fsdp"), "mp", None, None)
         )
+
+        # Compute attention output
         attn_output = jnp.einsum(
             "...hqk,...khd->...qhd", attn_weights, xv, precision=self.precision
         )
 
+        # Reshape attention output and project back to hidden size
         attn_output = einops.rearrange(attn_output, "b s h d -> b s (h d)")
         attn_output = self.wo(attn_output)
+
+        # Apply residual dropout
         attn_output = self.resid_dropout(attn_output, deterministic=deterministic)
 
+        # Prepare output tuple
         outputs = (attn_output, attn_weights) if output_attentions else (attn_output,)
         return outputs
 
