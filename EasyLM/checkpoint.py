@@ -45,7 +45,7 @@ class StreamingCheckpointer(object):
         )
 
     @staticmethod
-    def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None):
+    def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None, chunk_size=1024*1024*1024):  # 1GB chunk size
         train_state = to_state_dict(train_state)
         packer = msgpack.Packer()
         flattend_train_state = flatten_dict(train_state)
@@ -101,21 +101,28 @@ class StreamingCheckpointer(object):
         if remove_dict_prefix is not None:
             remove_dict_prefix = tuple(remove_dict_prefix)
         flattend_train_state = {}
-        with mlxu.open_file(path) as fin:
-            # 83886080 bytes = 80 MB, which is 16 blocks on GCS
-            unpacker = msgpack.Unpacker(fin, read_size=83886080, max_buffer_size=0)
-            for key, value in unpacker:
-                key = tuple(key)
-                if remove_dict_prefix is not None:
-                    if key[:len(remove_dict_prefix)] == remove_dict_prefix:
-                        key = key[len(remove_dict_prefix):]
-                    else:
-                        continue
+        chunk_index = 0
+        while True:
+            chunk_path = f"{path}.{chunk_index:03d}"
+            if not os.path.exists(chunk_path):
+                break
 
-                tensor = from_bytes(None, value)
-                if shard_fns is not None:
-                    tensor = shard_fns[key](tensor)
-                flattend_train_state[key] = tensor
+            with mlxu.open_file(chunk_path) as fin:
+                unpacker = msgpack.Unpacker(fin, read_size=83886080, max_buffer_size=0)
+                for key, value in unpacker:
+                    key = tuple(key)
+                    if remove_dict_prefix is not None:
+                        if key[:len(remove_dict_prefix)] == remove_dict_prefix:
+                            key = key[len(remove_dict_prefix):]
+                        else:
+                            continue
+
+                    tensor = from_bytes(None, value)
+                    if shard_fns is not None:
+                        tensor = shard_fns[key](tensor)
+                    flattend_train_state[key] = tensor
+
+            chunk_index += 1
 
         if target is not None:
             flattened_target = flatten_dict(
