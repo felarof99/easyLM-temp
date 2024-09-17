@@ -45,19 +45,42 @@ class StreamingCheckpointer(object):
         )
 
     @staticmethod
-    def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None, chunk_size=5*1024*1024*1024):  # 1GB chunk size
+    def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None, chunk_size=1024*1024*1024):  # 1GB chunk size
         train_state = to_state_dict(train_state)
         packer = msgpack.Packer()
         flattend_train_state = flatten_dict(train_state)
         if gather_fns is not None:
             gather_fns = flatten_dict(to_state_dict(gather_fns))
 
-        with mlxu.open_file(path, "wb") as fout:
-            for key, value in flattend_train_state.items():
-                if gather_fns is not None:
-                    value = gather_fns[key](value)
-                value = float_tensor_to_dtype(value, float_dtype)
-                fout.write(packer.pack((key, to_bytes(value))))
+        chunk_index = 0
+        current_chunk_size = 0
+        current_chunk = b''
+
+        for key, value in flattend_train_state.items():
+            if gather_fns is not None:
+                value = gather_fns[key](value)
+            value = float_tensor_to_dtype(value, float_dtype)
+            packed_data = packer.pack((key, to_bytes(value)))
+            
+            if current_chunk_size + len(packed_data) > chunk_size:
+                # Write the current chunk
+                chunk_path = f"{path}.{chunk_index:03d}"
+                with mlxu.open_file(chunk_path, "wb") as fout:
+                    fout.write(current_chunk)
+                
+                # Reset for the next chunk
+                chunk_index += 1
+                current_chunk_size = 0
+                current_chunk = b''
+            
+            current_chunk += packed_data
+            current_chunk_size += len(packed_data)
+
+        # Write the last chunk
+        if current_chunk:
+            chunk_path = f"{path}.{chunk_index:03d}"
+            with mlxu.open_file(chunk_path, "wb") as fout:
+                fout.write(current_chunk)
 
     def save_pickle(self, obj, filename):
         if self.enable:
