@@ -95,7 +95,8 @@ class LLaMAConfigurator(object):
         config.fcm_max_ratio = 0.0
 
         updates = {
-            "debug": dict(
+            "debug":
+            dict(
                 base_model="debug",
                 hidden_size=128,
                 intermediate_size=256,
@@ -104,7 +105,8 @@ class LLaMAConfigurator(object):
                 num_key_value_heads=4,
                 rms_norm_eps=1e-6,
             ),
-            "llama3_8b": dict(
+            "llama3_8b":
+            dict(
                 base_model="llama3_8b",
                 vocab_size=128256,
                 hidden_size=4096,
@@ -116,13 +118,27 @@ class LLaMAConfigurator(object):
                 rms_norm_eps=1e-5,
                 rope_theta=5e5,
             ),
-            "llama3_70b": dict(
+            "llama3_70b":
+            dict(
                 base_model="llama3_8b",
                 vocab_size=128256,
                 hidden_size=8192,
                 intermediate_size=28672,
                 num_hidden_layers=80,
                 num_attention_heads=64,
+                num_key_value_heads=8,
+                max_position_embeddings=8192,
+                rms_norm_eps=1e-5,
+                rope_theta=5e5,
+            ),
+            "llama3_405b":
+            dict(
+                base_model="llama3_8b",
+                vocab_size=128256,
+                hidden_size=16384,
+                intermediate_size=57344,
+                num_hidden_layers=126,
+                num_attention_heads=128,
                 num_key_value_heads=8,
                 max_position_embeddings=8192,
                 rms_norm_eps=1e-5,
@@ -347,7 +363,7 @@ class Attention(nn.Module):
                 jnp.ones((1, self.config.max_position_embeddings), dtype="bool"),
                 dtype="bool",
             )
-            
+
         causal_mask = full_causal_mask[:, :, :query_length, :key_length]
 
         # Broadcast causal mask to batch size
