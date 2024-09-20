@@ -136,7 +136,7 @@ class LLaMAConfigurator(object):
                 base_model="llama3_8b",
                 vocab_size=128256,
                 hidden_size=16384,
-                intermediate_size=57344,
+                intermediate_size=53248,
                 num_hidden_layers=126,
                 num_attention_heads=128,
                 num_key_value_heads=8,

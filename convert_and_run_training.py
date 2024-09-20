@@ -28,8 +28,8 @@ HF_DIR = '/home/felarof99/data/hf/'
 import os
 os.environ['HF_HUB_CACHE'] = HF_DIR
 os.environ['HF_HOME'] = HF_DIR
-get_ipython().system('export HF_HUB_CACHE=HF_DIR')
-get_ipython().system('export HF_HOME=HF_DIR')
+# get_ipython().system('export HF_HUB_CACHE=HF_DIR')
+# get_ipython().system('export HF_HOME=HF_DIR')
 
 os.makedirs(HF_DIR, exist_ok=True)
 
@@ -63,7 +63,7 @@ convert_hf_to_easylm.FLAGS = args
 
 # Set up the llama configuration
 convert_hf_to_easylm.FLAGS.llama = llama_model.LLaMAConfigurator.get_default_config()
-convert_hf_to_easylm.FLAGS.llama.base_model = "llama3_8b"
+convert_hf_to_easylm.FLAGS.llama.base_model = "llama3_405b"
 
 convert_hf_to_easylm.main([])
 

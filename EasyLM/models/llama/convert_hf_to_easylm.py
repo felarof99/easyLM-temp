@@ -62,6 +62,7 @@ def main(argv):
     start = time.time()
     # Initialize LLaMA configuration
     llama_config = LLaMAConfigurator.finalize_config(FLAGS.llama)
+    print(f"Using configuration: {llama_config}")
     
     # Request HuggingFace token from user
     huggingface_token = input("INPUT: Please provide your HUGGINGFACE_TOKEN: ")
