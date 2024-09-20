@@ -45,7 +45,7 @@ class StreamingCheckpointer(object):
         )
 
     @staticmethod
-    def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None, chunk_size=5*1024*1024*1024):  # 1GB chunk size
+    def save_train_state_to_file(train_state, path, gather_fns=None, float_dtype=None, chunk_size=10*1024*1024*1024):  # 10GB chunk size
         train_state = to_state_dict(train_state)
         packer = msgpack.Packer()
         flattend_train_state = flatten_dict(train_state)
